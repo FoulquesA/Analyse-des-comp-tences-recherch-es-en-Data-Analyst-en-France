@@ -110,6 +110,52 @@ with open('offres_analyste.json', 'r', encoding='utf-8') as f:
 
 print(f"\nNombre d'offres d'emploi : {len(offres)}")
 
+
+# === CHARGEMENT (existant) ===
+with open('offres_analyste.json', 'r', encoding='utf-8') as f:
+    offres = json.load(f)
+
+print(f"\nNombre d'offres brutes : {len(offres)}")
+
+
+# Filtrage des offres Data Analyst (exclure analystes qualité/labo/cyber)
+keywords_data = [
+    'data', 'données', 'business intelligence', 'bi', 'reporting', 
+    'dashboard', 'tableau de bord', 'sql', 'python', 'power bi', 'powerbi',
+    'analyse de données', 'data analyst', 'analyste données', 'analyste data',
+    'datawarehouse', 'etl', 'base de données', 'bases de données',
+    'visualisation', 'dataviz', 'kpi', 'indicateurs', 'excel'
+]
+
+keywords_exclusion = [
+    'laboratoire', 'échantillon', 'prélèvement', 'contrôle qualité',
+    'chimie', 'biologie', 'pharmaceutique', 'analyse médicale',
+    'soc', 'cybersécurité', 'siem', 'incident', 'menace',
+    'crédit', 'risque financier', 'conformité bancaire',
+    'étalonnage', 'matériaux', 'essais', 'norme iso',
+    'toxicologie', 'échantillonnage', 'chromatographie'
+]
+
+offres_filtrees = []
+
+for offre in offres:
+    texte = offre.get('intitule', '').lower()
+    if 'competences' in offre and offre['competences']:
+        texte += ' ' + ' '.join([c.get('libelle', '').lower() for c in offre['competences']])
+    
+    # Exclure si contient keywords d'exclusion
+    if any(kw in texte for kw in keywords_exclusion):
+        continue
+    
+    # Garder si contient keywords data analyst
+    if any(kw in texte for kw in keywords_data):
+        offres_filtrees.append(offre)
+
+print(f"\nOffres filtrées : {len(offres_filtrees)}/{len(offres)} ({len(offres_filtrees)/len(offres)*100:.1f}% du dataset)")
+
+# Utiliser le dataset filtré pour l'analyse
+offres = offres_filtrees
+
 # Extraire compétences
 competences_brutes = []
 for offre in offres:
@@ -302,26 +348,155 @@ print("\n" + "="*80)
 date_strings = [offre.get("dateCreation") for offre in offres if offre.get("dateCreation")]
 if date_strings:
     dates = [datetime.fromisoformat(s.replace("Z", "+00:00")) for s in date_strings]
-    print(min(dates), max(dates))
+    print('date de création des offfres minimum:', min(dates), 'et maximum:', max(dates))
+    print("="*80)
 
 
 
 
 
+# EXPLORATION DES NIVEAUX D'EXPÉRIENCE
+print("EXPLORATION : NIVEAUX D'EXPÉRIENCE DISPONIBLES")
+print("="*80)
+
+niveaux_bruts = []
+for offre in offres:
+    niveau = offre.get('experienceLibelle')
+    if niveau:
+        niveaux_bruts.append(niveau)
+
+niveaux_count = Counter(niveaux_bruts)
+
+print(f"\nTotal offres avec niveau spécifié : {len(niveaux_bruts)} / {len(offres)}")
+print("\nRépartition :")
+for niveau, count in niveaux_count.most_common():
+    pct = (count / len(offres)) * 100
+    print(f"  {niveau:40s} : {count:4d} offres ({pct:5.1f}%)")
 
 
 
 
 
+comps_par_niveau = {
+    'Junior': [],
+    'Confirmé': [],
+    'Senior': []
+}
+
+for offre in offres:
+    niveau_raw = offre.get('experienceLibelle', '')
+    niveau = 'Junior' if 'junior' in niveau_raw.lower() or '0-2' in niveau_raw else \
+             'Senior' if 'senior' in niveau_raw.lower() or '6+' in niveau_raw else \
+             'Confirmé'
+    
+    if 'competences' in offre and offre['competences']:
+        for comp in offre['competences']:
+            if 'libelle' in comp:
+                comps_par_niveau[niveau].append(comp['libelle'])
 
 
-#appellationlibellé
-#experiencelibelle
-#niveaulibelle
+for niveau in ['Junior', 'Confirmé', 'Senior']:
+    if not comps_par_niveau[niveau]:
+        continue
+    
+    # Compter les mots
+    mots_niveau = []
+    for comp in comps_par_niveau[niveau]:
+        mots = re.findall(r'\b\w{5,}\b', comp.lower())
+        mots_niveau.extend(mots)
+    
+    mots_count = Counter(mots_niveau)
+    
+    # Stop words
+    stop = {'dans', 'pour', 'avec', 'être', 'avoir', 'faire', 'mettre', 
+            'cette', 'tous', 'plus', 'leurs', 'dont'}
+    
+   # Analyse simplifiée : débutant vs expérimenté
+print("\n" + "="*80)
+print("DÉBUTANT VS EXPÉRIMENTÉ")
+print("="*80)
+
+# Regrouper en 2 catégories seulement
+debutant = []
+experimente = []
+
+for offre in offres:
+    niveau = offre.get('experienceLibelle', '').lower()
+    
+    if 'competences' in offre and offre['competences']:
+        comps = [c.get('libelle', '') for c in offre['competences']]
+        
+        # Débutant = 0-2 ans
+        if any(x in niveau for x in ['débutant', '0', '1 an', '2 an', '6 mois']):
+            debutant.extend(comps)
+        # Expérimenté = 3+ ans
+        elif any(x in niveau for x in ['3 an', '4 an', '5 an', '6 an', '7 an', '8 an', '9 an', '10 an']):
+            experimente.extend(comps)
+
+print(f"\nOffres débutant : {len([o for o in offres if any(x in o.get('experienceLibelle', '').lower() for x in ['débutant', '0', '1 an', '2 an'])])}")
+print(f"Offres expérimenté : {len([o for o in offres if any(x in o.get('experienceLibelle', '').lower() for x in ['3 an', '4 an', '5 an', '6 an'])])}")
+
+# Mots clés par catégorie
+mots_debutant = []
+mots_exp = []
+
+for comp in debutant:
+    mots = re.findall(r'\b\w{5,}\b', comp.lower())
+    mots_debutant.extend(mots)
+
+for comp in experimente:
+    mots = re.findall(r'\b\w{5,}\b', comp.lower())
+    mots_exp.extend(mots)
+
+stop = {'dans', 'pour', 'avec', 'être', 'avoir', 'faire', 'mettre', 'donner',
+        'tous', 'plus', 'leurs', 'cette', 'dont', 'savoir', 'pouvoir'}
+
+count_deb = Counter([m for m in mots_debutant if m not in stop])
+count_exp = Counter([m for m in mots_exp if m not in stop])
+
+print("\nTop 10 mots - Postes DÉBUTANT :")
+for i, (mot, count) in enumerate(count_deb.most_common(10), 1):
+    print(f"  {i:2d}. {mot:20s} : {count:3d}")
+
+print("\nTop 10 mots - Postes EXPÉRIMENTÉ :")
+for i, (mot, count) in enumerate(count_exp.most_common(10), 1):
+    print(f"  {i:2d}. {mot:20s} : {count:3d}")
+
+# Identifier différences
+print("\nMots sur-représentés chez les EXPÉRIMENTÉS :")
+for mot in count_exp.most_common(20):
+    freq_deb = count_deb.get(mot[0], 0) / len(mots_debutant) * 100 if mots_debutant else 0
+    freq_exp = count_exp.get(mot[0], 0) / len(mots_exp) * 100 if mots_exp else 0
+    
+    if freq_exp > freq_deb * 1.5 and freq_exp > 3:  # 50% plus fréquent ET >3%
+        print(f"  • {mot[0]:20s} : {freq_deb:4.1f}% (déb) → {freq_exp:4.1f}% (exp)")
 
 
-#Count apparition de chaque compétence
-#moyenne date creation
-#min et max date creation
+# Domaines d'expertise
+print("\n" + "="*80)
+print("DOMAINES D'EXPERTISE RECHERCHÉS")
+print("="*80)
 
-#count appellation libellé
+domaines = {
+    'Finance/Gestion': ['financ', 'budget', 'compta', 'trésor', 'crédit', 'risque'],
+    'Données/BI': ['données', 'data', 'business intelligence', 'reporting', 'dashboard'],
+    'Statistiques': ['statistique', 'modèle', 'prévision', 'algorithme'],
+    'Marché/Concurrence': ['marché', 'concurren', 'veille', 'stratégi'],
+    'Performance': ['performance', 'indicateurs', 'kpi', 'optimis'],
+}
+
+domaines_count = Counter()
+for comp in competences_brutes:
+    comp_lower = comp.lower()
+    for domaine, kws in domaines.items():
+        if any(kw in comp_lower for kw in kws):
+            domaines_count[domaine] += 1
+
+print("\nDomaines d'expertise par fréquence :")
+for i, (dom, count) in enumerate(domaines_count.most_common(), 1):
+    pct = (count / len(offres)) * 100
+    print(f"{i}. {dom:25s} : {count:3d} mentions ({pct:5.1f}%)")
+
+
+
+
